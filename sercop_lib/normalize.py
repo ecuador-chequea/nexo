@@ -108,15 +108,24 @@ def normalize_search_result(item: dict) -> Optional[Ficha]:
 
 
 def normalize_release(record: dict) -> Optional[Ficha]:
-    """record: un objeto tal como lo devuelve el endpoint /api/record,
-    con 'ocid' y 'releases': [...]. Se usa el último release (más
-    reciente) para reflejar el estado más actual del proceso."""
-    ocid = record.get("ocid", "")
+    """record: un objeto tal como lo devuelve el endpoint /api/record.
+    Se usa el último release (más reciente) para reflejar el estado
+    más actual del proceso.
+
+    NOTA sobre el ocid: se prueba primero en el nivel superior de la
+    respuesta (record['ocid']) y, si no está ahí, se usa el que trae
+    el propio release (release['ocid']). Esto se agregó porque en la
+    práctica el nivel superior venía vacío para el ocid mientras que
+    el resto de campos (buyer, awards, tender) sí se extraían bien de
+    adentro de releases — señal de que la respuesta es más parecida a
+    un "release package" OCDS que a un "record package", donde el
+    ocid no siempre se repite arriba."""
     releases = record.get("releases", [])
     if not releases:
         return None
 
     release = releases[-1]  # el más reciente
+    ocid = record.get("ocid") or release.get("ocid", "")
     tags = release.get("tag", [])
 
     buyer = release.get("buyer", {}) or {}
