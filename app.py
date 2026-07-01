@@ -76,7 +76,26 @@ def render_query_box(key_prefix: str):
         key=f"{key_prefix}_free_text",
     )
 
-    if free_text and free_text != st.session_state.get(key_last_text):
+    st.warning(
+        "⚠️ **Institución/proveedor sí se combinan como Y estrictamente** — "
+        "si llenas los dos y no calzan exactamente con el mismo proceso, te "
+        "puede dar 0 resultados. La **palabra clave**, en cambio, se aplica "
+        "de forma más flexible sobre los resultados de institución/proveedor "
+        "(busca coincidencia parcial en título y descripción), así que sí "
+        "puedes combinar institución + palabra clave con confianza."
+    )
+
+    col_reparse, _ = st.columns([1, 3])
+    with col_reparse:
+        force_reparse = st.button(
+            "🔄 Reinterpretar texto libre",
+            key=f"{key_prefix}_reparse_btn",
+            help="Si editaste los campos de abajo a mano y quedaron "
+                 "desincronizados con el aviso de interpretación, usa esto "
+                 "para volver a aplicar la interpretación del texto libre.",
+        )
+
+    if free_text and (free_text != st.session_state.get(key_last_text) or force_reparse):
         parsed = parse_query(free_text)
         st.session_state[key_year_from] = parsed.year_from or 2023
         st.session_state[key_year_to] = parsed.year_to or st.session_state[key_year_from]
@@ -191,10 +210,26 @@ with tab_live:
             )
 
         try:
+            # No se manda la palabra clave al parámetro `search` de SERCOP:
+            # combinada con `buyer` del lado del servidor, la búsqueda exige
+            # casi coincidencia exacta y termina dando 0 resultados aunque sí
+            # existan procesos relevantes (esto se confirmó probando "presidencia"
+            # + "comunicación", que daba 0 aun cuando sí hay contratos de
+            # comunicación de la Presidencia). En su lugar: se trae TODO lo de
+            # la institución/proveedor (filtro server-side confiable) y la
+            # palabra clave se aplica después, en la app, buscando coincidencia
+            # parcial en título y descripción — mucho más tolerante.
             raw_results = api_client.search_year_range(
-                year_from, year_to, keyword=keyword, buyer=institution,
+                year_from, year_to, keyword="", buyer=institution,
                 supplier=supplier, progress_callback=cb,
             )
+            if keyword:
+                kw_lower = keyword.lower()
+                raw_results = [
+                    r for r in raw_results
+                    if kw_lower in (r.get("title") or "").lower()
+                    or kw_lower in (r.get("description") or "").lower()
+                ]
         except RuntimeError as e:
             st.error(str(e))
             raw_results = []
