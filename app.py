@@ -161,6 +161,15 @@ with tab_live:
 
         progress.empty()
 
+        # Vista de depuración: muestra el JSON crudo del primer resultado
+        # tal como lo devuelve SERCOP. Si algún campo (institución,
+        # proveedor, etc.) aparece vacío en la tabla, revisa aquí primero
+        # en vez de adivinar — así vemos exactamente qué nombres de campo
+        # está usando la API en este caso concreto.
+        if raw_results:
+            with st.expander("🔧 Depuración: ver respuesta cruda de la API (primer resultado)"):
+                st.json(raw_results[0])
+
         # Los resultados de search_ocds ya vienen con casi todo lo
         # necesario (buyerName, single_provider, date, ocid) — NO se
         # llama a /api/record aquí. Esa llamada se hace después, una
