@@ -1,0 +1,166 @@
+"""
+Convierte un "release" OCDS (el formato anidado que usa SERCOP) en una
+ficha plana con los campos que pediste: número de proceso, estado,
+institución contratante, proveedor, fecha del proceso, enlace.
+
+OJO — dos cosas que hay que verificar con casos reales antes de confiar
+ciegamente en esto:
+
+1. "Estado" no es un campo directo en OCDS. Se infiere de qué etapas
+   (tags) están presentes en el release. La lógica de abajo es una
+   primera aproximación; conviene validarla contra 10-15 procesos que
+   tú ya conozcas el estado real, y ajustar.
+
+2. El enlace al portal: no logré confirmar el patrón exacto de URL para
+   enlazar directo a un proceso (el buscador de datosabiertos es una
+   SPA renderizada en el cliente). Por ahora se genera un enlace de
+   *búsqueda* por OCID en el buscador de datos abiertos, no un enlace
+   directo a la ficha. Hay que probarlo con un OCID real y ajustar
+   build_portal_link() si el patrón no funciona.
+"""
+from dataclasses import dataclass, asdict
+from typing import Optional
+
+
+ESTADO_POR_ETAPA = {
+    "implementation": "Implementación / ejecución",
+    "contract": "Contratado",
+    "award": "Adjudicado",
+    "tender": "En proceso de oferta",
+    "planning": "Planificación",
+}
+
+# Orden de prioridad: si el release tiene varias etapas, se reporta la más avanzada
+_ORDEN_ETAPAS = ["implementation", "contract", "award", "tender", "planning"]
+
+
+@dataclass
+class Ficha:
+    numero_proceso: str
+    estado: str
+    institucion_contratante: str
+    proveedor: str
+    fecha_proceso: str
+    monto: Optional[str]
+    enlace: str
+    ocid: str
+
+    def to_dict(self):
+        return asdict(self)
+
+
+def _inferir_estado(tags: list[str]) -> str:
+    for etapa in _ORDEN_ETAPAS:
+        if etapa in tags:
+            return ESTADO_POR_ETAPA[etapa]
+    return "Estado no determinado"
+
+
+def _extraer_proveedor(release: dict) -> str:
+    # el proveedor "ganador" suele aparecer en awards[].suppliers[]
+    awards = release.get("awards", [])
+    for award in awards:
+        suppliers = award.get("suppliers", [])
+        if suppliers:
+            return suppliers[0].get("name", "")
+    # si no hay adjudicación todavía, no hay proveedor definitivo
+    return "(sin adjudicar)"
+
+
+def build_portal_link(ocid: str) -> str:
+    """Genera un enlace de búsqueda por OCID en el buscador de datos
+    abiertos. VERIFICAR con un OCID real antes de confiar en que
+    apunta directo a la ficha del proceso."""
+    return f"https://datosabiertos.compraspublicas.gob.ec/PLATAFORMA/procedimientos?ocid={ocid}"
+
+
+def normalize_search_result(item: dict) -> Optional[Ficha]:
+    """Normaliza un item TAL COMO LO DEVUELVE /api/search_ocds — que es
+    plano (id, ocid, date, buyerName, title, description, year,
+    internal_type, single_provider), NO el formato anidado de releases.
+
+    Esto reemplaza el supuesto equivocado de la primera versión, donde
+    se asumía que un resultado de búsqueda traía 'releases' y, si no,
+    se llamaba a /api/record por CADA resultado para completar los
+    datos. Confirmé la forma real de la respuesta y no es así: los
+    resultados de búsqueda ya traen casi todo lo necesario. Llamar a
+    /api/record por cada fila de una búsqueda de cientos de resultados
+    habría sido cientos de llamadas HTTP innecesarias contra un portal
+    que ya reportas como lento — un error de diseño real, no cosmético.
+
+    'estado' no viene en el resultado de búsqueda; se resuelve solo
+    cuando el usuario hace clic en un resultado (ver get_full_ficha en
+    app.py), consultando /api/record para ESE proceso puntual."""
+    ocid = item.get("ocid", "")
+    if not ocid:
+        return None
+
+    return Ficha(
+        numero_proceso=ocid,
+        estado="(clic para ver detalle)",
+        institucion_contratante=item.get("buyerName", ""),
+        proveedor=item.get("single_provider") or "(sin adjudicar / múltiples)",
+        fecha_proceso=item.get("date", ""),
+        monto=None,
+        enlace=build_portal_link(ocid),
+        ocid=ocid,
+    )
+
+
+def normalize_release(record: dict) -> Optional[Ficha]:
+    """record: un objeto tal como lo devuelve el endpoint /api/record,
+    con 'ocid' y 'releases': [...]. Se usa el último release (más
+    reciente) para reflejar el estado más actual del proceso."""
+    ocid = record.get("ocid", "")
+    releases = record.get("releases", [])
+    if not releases:
+        return None
+
+    release = releases[-1]  # el más reciente
+    tags = release.get("tag", [])
+
+    buyer = release.get("buyer", {}) or {}
+    tender = release.get("tender", {}) or {}
+
+    fecha = release.get("date", "") or tender.get("tenderPeriod", {}).get("startDate", "")
+    monto = None
+    tender_value = tender.get("value", {})
+    if tender_value:
+        amount = tender_value.get("amount")
+        currency = tender_value.get("currency", "")
+        if amount is not None:
+            monto = f"{amount} {currency}".strip()
+
+    return Ficha(
+        numero_proceso=ocid,
+        estado=_inferir_estado(tags),
+        institucion_contratante=buyer.get("name", ""),
+        proveedor=_extraer_proveedor(release),
+        fecha_proceso=fecha,
+        monto=monto,
+        enlace=build_portal_link(ocid),
+        ocid=ocid,
+    )
+
+
+def normalize_bulk_row(row: dict) -> Optional[Ficha]:
+    """Normaliza una fila del CSV/JSON de descarga masiva (main.csv /
+    main.jsonl). La estructura de las descargas masivas es más plana
+    que la del API en vivo pero los nombres de columna hay que
+    confirmarlos contra el archivo real que se cargue — este mapeo usa
+    los nombres más probables según la documentación pública, pero
+    puede necesitar ajuste."""
+    ocid = row.get("ocid") or row.get("main_ocid", "")
+    if not ocid:
+        return None
+
+    return Ficha(
+        numero_proceso=ocid,
+        estado=row.get("status", row.get("tender_status", "Estado no determinado")),
+        institucion_contratante=row.get("buyer_name", row.get("parties_name", "")),
+        proveedor=row.get("awards_suppliers_name", "(sin adjudicar)"),
+        fecha_proceso=row.get("date", row.get("tender_tenderPeriod_startDate", "")),
+        monto=row.get("tender_value_amount"),
+        enlace=build_portal_link(ocid),
+        ocid=ocid,
+    )
