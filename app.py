@@ -17,6 +17,21 @@ st.caption(
     "buscar — revísala y corrígela si hace falta."
 )
 
+with st.expander("ℹ️ Cómo usar Nexo", expanded=False):
+    st.markdown(
+        "Escribe tu búsqueda en lenguaje libre (por ejemplo: *contratos "
+        "comunicación presidencia desde 2023-2025*) y da clic en **Buscar en "
+        "SERCOP**. Nexo interpreta el período, la institución y la palabra "
+        "clave, y los muestra en campos editables — corrígelos si algo no "
+        "quedó bien interpretado antes de buscar. Los resultados aparecen en "
+        "una tabla; **haz clic en el checkbox de la izquierda de una fila** "
+        "para abrir la ficha completa del proceso, con institución, "
+        "proveedor, estado, monto y el enlace directo al portal. "
+        "**Usa siempre la ficha, no la tabla, como fuente para una nota** — "
+        "la tabla puede tener datos desactualizados que la ficha corrige al "
+        "consultar el proceso en tiempo real."
+    )
+
 # Columnas probables donde buscar nombres de comprador/proveedor en
 # archivos de descarga masiva. Ajustar si tu archivo trae otros nombres
 # (usa la vista previa de columnas para confirmar).
