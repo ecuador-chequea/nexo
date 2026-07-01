@@ -92,7 +92,7 @@ def normalize_search_result(item: dict) -> Optional[Ficha]:
         numero_proceso=ocid,
         estado="(clic para ver detalle)",
         institucion_contratante=item.get("buyer", ""),
-        proveedor=item.get("suppliers") or "(sin adjudicar / múltiples)",
+        proveedor=item.get("suppliers") or "(ver ficha — no indexado en la búsqueda)",
         fecha_proceso=item.get("date", ""),
         monto=item.get("amount"),
         enlace=build_portal_link(ocid),
