@@ -68,10 +68,10 @@ def _extraer_proveedor(release: dict) -> str:
 
 
 def build_portal_link(ocid: str) -> str:
-    """Genera un enlace de búsqueda por OCID en el buscador de datos
-    abiertos. VERIFICAR con un OCID real antes de confiar en que
-    apunta directo a la ficha del proceso."""
-    return f"https://datosabiertos.compraspublicas.gob.ec/PLATAFORMA/procedimientos?ocid={ocid}"
+    """Enlace directo al proceso. Patrón VERIFICADO contra resultados reales
+    de datosabiertos.compraspublicas.gob.ec (antes esto era una suposición
+    sin confirmar; ya se comprobó con procesos reales)."""
+    return f"https://datosabiertos.compraspublicas.gob.ec/PLATAFORMA/ocds/{ocid}"
 
 
 def normalize_search_result(item: dict) -> Optional[Ficha]:
