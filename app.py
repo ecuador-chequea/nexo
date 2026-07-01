@@ -43,53 +43,78 @@ tab_live, tab_bulk = st.tabs(["📡 Búsqueda en vivo (API)", "📁 Archivos de 
 
 
 def render_query_box(key_prefix: str):
-    """Caja de búsqueda en lenguaje libre + campos editables. Devuelve
-    el ParsedQuery ya confirmado/corregido por el usuario."""
+    """Caja de búsqueda en lenguaje libre + campos editables.
+
+    NOTA sobre un bug que hubo aquí: Streamlit solo usa el parámetro
+    `value=` de un widget la PRIMERA vez que se renderiza; en las
+    siguientes ejecuciones, el widget conserva su propio valor guardado
+    en session_state y el `value=` se ignora. Eso hacía que, al escribir
+    una segunda búsqueda distinta, los campos de año/institución/palabra
+    clave se quedaran pegados con los valores de la búsqueda anterior.
+    La corrección: cuando el texto libre cambia, se escribe directamente
+    en session_state ANTES de crear esos widgets — es la única forma
+    confiable de actualizarlos programáticamente en Streamlit."""
+    key_year_from = f"{key_prefix}_year_from"
+    key_year_to = f"{key_prefix}_year_to"
+    key_keyword = f"{key_prefix}_keyword"
+    key_institution = f"{key_prefix}_institution"
+    key_last_text = f"{key_prefix}_last_parsed_text"
+    key_notes = f"{key_prefix}_parse_notes"
+    key_guess = f"{key_prefix}_institution_guess"
+    key_candidates = f"{key_prefix}_institution_candidates"
+
+    # valores por defecto la primera vez que se renderiza esta caja
+    st.session_state.setdefault(key_year_from, 2023)
+    st.session_state.setdefault(key_year_to, st.session_state[key_year_from])
+    st.session_state.setdefault(key_keyword, "")
+    st.session_state.setdefault(key_institution, "")
+    st.session_state.setdefault(key_notes, [])
+    st.session_state.setdefault(key_candidates, [])
+
     free_text = st.text_input(
         "Busca en lenguaje libre (ej: 'contratos comunicación presidencia desde 2023-2025')",
         key=f"{key_prefix}_free_text",
     )
 
-    parsed = None
-    if free_text:
+    if free_text and free_text != st.session_state.get(key_last_text):
         parsed = parse_query(free_text)
-        if parsed.notes:
-            for note in parsed.notes:
-                st.info(note)
+        st.session_state[key_year_from] = parsed.year_from or 2023
+        st.session_state[key_year_to] = parsed.year_to or st.session_state[key_year_from]
+        st.session_state[key_keyword] = parsed.keyword
+        st.session_state[key_institution] = (
+            parsed.institution_candidates[0] if parsed.institution_candidates else ""
+        )
+        st.session_state[key_notes] = parsed.notes
+        st.session_state[key_guess] = parsed.institution_guess
+        st.session_state[key_candidates] = parsed.institution_candidates
+        st.session_state[key_last_text] = free_text
+
+    for note in st.session_state.get(key_notes, []):
+        st.info(note)
 
     col1, col2, col3 = st.columns(3)
     with col1:
         year_from = st.number_input(
-            "Desde (año)", min_value=2008, max_value=2026,
-            value=parsed.year_from if parsed and parsed.year_from else 2023,
-            key=f"{key_prefix}_year_from",
+            "Desde (año)", min_value=2008, max_value=2026, key=key_year_from,
         )
     with col2:
         year_to = st.number_input(
-            "Hasta (año)", min_value=2008, max_value=2026,
-            value=parsed.year_to if parsed and parsed.year_to else int(year_from),
-            key=f"{key_prefix}_year_to",
+            "Hasta (año)", min_value=2008, max_value=2026, key=key_year_to,
         )
     with col3:
-        keyword = st.text_input(
-            "Palabra clave",
-            value=parsed.keyword if parsed else "",
-            key=f"{key_prefix}_keyword",
-        )
+        keyword = st.text_input("Palabra clave", key=key_keyword)
 
-    institution_default = ""
-    if parsed and parsed.institution_candidates:
-        institution_default = parsed.institution_candidates[0]
+    candidates = st.session_state.get(key_candidates, [])
+    if candidates:
         st.caption(
-            f"Institución sugerida a partir de tu texto: **{parsed.institution_guess}** → "
-            f"posibles nombres reales: {', '.join(parsed.institution_candidates)}. "
+            f"Institución sugerida a partir de tu texto: **{st.session_state.get(key_guess)}** → "
+            f"posibles nombres reales: {', '.join(candidates)}. "
             f"Ajusta el campo de abajo si no es la correcta."
         )
 
     institution = st.text_input(
         "Institución contratante (opcional, nombre o fragmento)",
-        value=institution_default,
-        key=f"{key_prefix}_institution",
+        key=key_institution,
     )
     supplier = st.text_input(
         "Proveedor (opcional, nombre o fragmento)",
