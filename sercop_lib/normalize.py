@@ -75,22 +75,15 @@ def build_portal_link(ocid: str) -> str:
 
 
 def normalize_search_result(item: dict) -> Optional[Ficha]:
-    """Normaliza un item TAL COMO LO DEVUELVE /api/search_ocds — que es
-    plano (id, ocid, date, buyerName, title, description, year,
-    internal_type, single_provider), NO el formato anidado de releases.
+    """Normaliza un item de /api/search_ocds.
 
-    Esto reemplaza el supuesto equivocado de la primera versión, donde
-    se asumía que un resultado de búsqueda traía 'releases' y, si no,
-    se llamaba a /api/record por CADA resultado para completar los
-    datos. Confirmé la forma real de la respuesta y no es así: los
-    resultados de búsqueda ya traen casi todo lo necesario. Llamar a
-    /api/record por cada fila de una búsqueda de cientos de resultados
-    habría sido cientos de llamadas HTTP innecesarias contra un portal
-    que ya reportas como lento — un error de diseño real, no cosmético.
+    Nombres de campo CONFIRMADOS contra la respuesta real (no contra
+    documentación de terceros, que resultó estar desactualizada): id,
+    ocid, year, month, method, internal_type, locality, region,
+    suppliers, buyer, amount, date, title, description, budget.
 
-    'estado' no viene en el resultado de búsqueda; se resuelve solo
-    cuando el usuario hace clic en un resultado (ver get_full_ficha en
-    app.py), consultando /api/record para ESE proceso puntual."""
+    'estado' sigue sin venir en la búsqueda; se resuelve solo al abrir
+    el detalle (ver get_full_ficha en app.py)."""
     ocid = item.get("ocid", "")
     if not ocid:
         return None
@@ -98,10 +91,10 @@ def normalize_search_result(item: dict) -> Optional[Ficha]:
     return Ficha(
         numero_proceso=ocid,
         estado="(clic para ver detalle)",
-        institucion_contratante=item.get("buyerName", ""),
-        proveedor=item.get("single_provider") or "(sin adjudicar / múltiples)",
+        institucion_contratante=item.get("buyer", ""),
+        proveedor=item.get("suppliers") or "(sin adjudicar / múltiples)",
         fecha_proceso=item.get("date", ""),
-        monto=None,
+        monto=item.get("amount"),
         enlace=build_portal_link(ocid),
         ocid=ocid,
     )
